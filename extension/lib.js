@@ -1,7 +1,9 @@
 // Shared logic: reading the Goodreads shelf and checking Amazon's Kindle store.
 // Everything runs inside the person's own Chrome, with their own Goodreads and Amazon sessions.
+// Loaded by the offscreen document (which does the fetching and parsing) and by the dashboard.
 
 const AMAZON = "https://www.amazon.com";
+const GOODREADS = "https://www.goodreads.com";
 
 class AmazonBlocked extends Error {}
 
@@ -35,14 +37,14 @@ async function goodreadsUserId(link) {
   const name = link.replace(/\/+$/, "").split("/").pop();
   if (!name) return null;
   // Goodreads redirects /<name> to /user/show/<id>-<name>; the final address holds the ID.
-  const res = await fetch(`https://www.goodreads.com/${encodeURIComponent(name)}`, { credentials: "include" });
+  const res = await fetch(`${GOODREADS}/${encodeURIComponent(name)}`, { credentials: "include" });
   m = res.url.match(/\/user\/show\/(\d+)/);
   return m ? m[1] : null;
 }
 
 // Newest 100 books on a shelf, via Goodreads' embeddable shelf widget.
 async function goodreadsShelf(uid, shelf = "to-read") {
-  const url = `https://www.goodreads.com/review/custom_widget/${uid}.x?num_books=100&order=d` +
+  const url = `${GOODREADS}/review/custom_widget/${uid}.x?num_books=100&order=d` +
     `&shelf=${encodeURIComponent(shelf)}&show_author=1&show_cover=1&show_title=1&sort=date_added&widget_id=1`;
   const res = await fetch(url, { credentials: "include" });
   if (!res.ok) throw new Error(`Goodreads answered ${res.status}`);
