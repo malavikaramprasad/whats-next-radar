@@ -20,7 +20,7 @@ It keeps itself up to date in the background while Chrome is running; you don't 
 - **Amazon:** checks 3 books at a time and keeps each result for 24 hours, then re-checks it.
   Your whole shelf takes about 10 seconds.
 
-Click the **What's Next** icon to see the list: **✓ Free to read** (Kindle Unlimited), **Paid** with
+Click the **What's Next** icon to see the list, with books free on Kindle Unlimited at the top, then paid, then the rest: **✓ Free to read** (Kindle Unlimited), **Paid** with
 the Kindle price, or **Not found on Kindle**. New books are labelled **New**. **Refresh** re-reads
 Goodreads and re-checks every book now; **Check again** re-checks one book.
 

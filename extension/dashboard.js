@@ -78,6 +78,10 @@ function render() {
     if (filter === "other" && (s === "yes" || s === "no")) return false;
     return !q || `${b.title} ${b.author}`.toLowerCase().includes(q);
   });
+  // Free on KU first, then paid, then the rest. Within each group, keep the Goodreads order (newest first).
+  // Sort by the saved result, not "Checking…", so cards don't jump around during a re-check.
+  const rank = (b) => ({ yes: 0, no: 1 }[(state.kindle[b.id] || {}).status] ?? 2);
+  shown.sort((a, b) => rank(a) - rank(b));
   list.replaceChildren(...shown.map(card));
   if (!shown.length) list.append(el("li", { class: "empty" }, state.books.length ? "No books match." : "Loading your Goodreads shelf…"));
 
