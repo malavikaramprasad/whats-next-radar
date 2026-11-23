@@ -23,16 +23,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Fetch Goodreads shelf
         run: python3 scripts/fetch_shelf.py
-      - name: Commit updated books
+      - name: Commit updated books and covers
         run: |
-          if ! git diff --quiet -- data/books.json; then
-            # Ignore runs where only the timestamp changed
-            if git diff -U0 -- data/books.json | grep '^[-+] ' | grep -vq '"fetched_at"'; then
-              git config user.name "github-actions[bot]"
-              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-              git commit -am "Refresh Goodreads shelf"
-              git push
-            fi
+          git add data covers
+          # Skip commits where only the fetch timestamp changed
+          if git diff --cached --name-only | grep -qv '^data/books.json$' || \
+             git diff --cached -U0 -- data/books.json | grep '^[-+] ' | grep -vq '"fetched_at"'; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Refresh Goodreads shelf"
+            git push
           fi
       - uses: actions/upload-pages-artifact@v3
         with:

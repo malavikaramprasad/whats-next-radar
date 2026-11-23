@@ -61,7 +61,7 @@ def shelf(uid, name="to-read"):
             "title": title,
             "author": author,
             "search_title": clean_title(title),
-            "cover": cover.group(1).replace("._SY75_", "._SY180_") if cover else None,
+            "cover_source": cover.group(1).replace("._SY75_", "._SY180_") if cover else None,
             "goodreads_url": html.unescape(t.group(1)).split("?")[0],
         })
     return books
@@ -74,6 +74,37 @@ def clean_title(title):
     return t.strip()
 
 
+def save_covers(books):
+    """Download covers into covers/ so the page serves its own copies.
+
+    Some hosts (and previews) block images from other sites; local files always load.
+    Existing files are reused, and covers for books no longer on the shelf are removed.
+    """
+    folder = ROOT / "covers"
+    folder.mkdir(exist_ok=True)
+    keep = set()
+    for b in books:
+        b["cover"] = None
+        src = b.pop("cover_source", None)
+        if not src:
+            continue
+        name = re.sub(r"[^\w-]", "_", b["id"]) + ".jpg"
+        path = folder / name
+        if not path.exists():
+            try:
+                data = urllib.request.urlopen(urllib.request.Request(src, headers=UA), timeout=30).read()
+                path.write_bytes(data)
+                time.sleep(0.5)  # be gentle with Goodreads' image server
+            except (urllib.error.URLError, TimeoutError) as e:
+                print(f"Cover download failed for {b['title']!r}: {e}", file=sys.stderr)
+                continue
+        b["cover"] = f"covers/{name}"
+        keep.add(name)
+    for old in folder.glob("*.jpg"):
+        if old.name not in keep:
+            old.unlink()
+
+
 def main():
     cfg = json.loads((ROOT / "config.json").read_text())
     uid = user_id(cfg["goodreads_profile"])
@@ -82,6 +113,7 @@ def main():
     books = shelf(uid, cfg.get("shelf", "to-read"))
     if not books:
         sys.exit("Shelf came back empty - is the Goodreads profile public?")
+    save_covers(books)
     out = {
         "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "goodreads_user_id": uid,
