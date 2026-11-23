@@ -73,6 +73,11 @@ async function goodreadsShelf(uid, shelf = "to-read") {
 // Bump when the way Amazon pages are read changes: every saved result is then re-checked.
 const PARSER_VERSION = 3;
 
+// Hoopla (library app): a search link only. Hoopla has no public API, so availability isn't checked here.
+function hooplaSearchUrl(book) {
+  return `https://www.hoopladigital.com/search?q=${encodeURIComponent(searchTitle(book.title) + " " + book.author)}&type=direct`;
+}
+
 function amazonSearchUrl(book) {
   return `${AMAZON}/s?k=${encodeURIComponent(searchTitle(book.title) + " " + book.author)}&i=digital-text`;
 }

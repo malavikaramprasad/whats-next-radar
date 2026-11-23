@@ -26,6 +26,9 @@ Click the **What's Next** icon to see the list, with books free on Kindle Unlimi
 the Kindle price, or **Not found on Kindle**. New books are labelled **New**. **Refresh** re-reads
 Goodreads and re-checks every book now; **Check again** re-checks one book.
 
+Each book also has **Find on Hoopla ↗**, which searches Hoopla (free ebooks and audiobooks through
+many public libraries) for that title. It's a link only; Hoopla availability isn't checked automatically.
+
 If Amazon shows a CAPTCHA, checking stops and says so. Open Amazon, complete it, then press Refresh.
 
 If your computer is asleep or Chrome is closed, nothing runs; it catches up the next time Chrome starts.

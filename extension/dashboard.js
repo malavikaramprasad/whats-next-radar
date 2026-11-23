@@ -118,6 +118,7 @@ function card(b) {
         el("div", {}, el("dt", {}, "Kindle price"), el("dd", { class: s === "no" && k.price ? "price-value" : "muted" }, priceText))),
       el("div", { class: "row" },
         el("a", { href: k.url || amazonSearchUrl(b), target: "_blank", rel: "noopener" }, k.url ? "Open on Amazon ↗" : "Search Amazon ↗"),
+        el("a", { href: hooplaSearchUrl(b), target: "_blank", rel: "noopener", title: "Search your library's Hoopla catalog for this book" }, "Find on Hoopla ↗"),
         k.checkedAt ? el("span", { class: "muted" }, `checked ${ago(k.checkedAt)}`) : null,
         s !== "checking" ? el("button", { on: { click: () => tell({ type: "check", id: b.id }) } }, "Check again") : null),
       k.evidence ? el("details", { class: "why" },
