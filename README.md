@@ -1,13 +1,20 @@
 # What's Next
 
-A small page that shows your Goodreads **to-read** shelf and helps you track which books are in **Kindle Unlimited**.
+Shows your Goodreads **to-read** shelf with each book's Kindle membership status (kindle+, Kindle
+Unlimited, Prime Reading) and Kindle price.
 
-## How it works
+**Use the Chrome extension in [`extension/`](extension/)** — see its [README](extension/README.md) to
+install. It refreshes your shelf and checks Amazon automatically in the background.
+
+The rest of this repository is the earlier web-page version, kept for reference: a static page with
+manual KU marks and a bookmarklet helper. It is no longer published or refreshed automatically.
+
+## Earlier web-page version
 
 - `scripts/fetch_shelf.py` reads your public Goodreads shelf through Goodreads' embeddable
   "custom widget" (the HTML snippet Goodreads offers for blogs). No login or API key needed.
   It writes `data/books.json`. Limit: newest 100 books on the shelf.
-- A GitHub Actions workflow runs it daily and publishes the page to GitHub Pages.
+- Run it yourself to update `data/books.json` (see "Run locally" below).
 - Amazon has no public API for Kindle Unlimited or Kindle prices and blocks automated checks, so
   KU status and price come from Amazon pages you open yourself:
   - **One-click helper (recommended):** open the "One-click Amazon helper" section on the page and drag
