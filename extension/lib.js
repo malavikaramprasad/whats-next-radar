@@ -70,66 +70,130 @@ async function goodreadsShelf(uid, shelf = "to-read") {
 }
 
 // ---------- Amazon ----------
+// Bump when the way Amazon pages are read changes: every saved result is then re-checked.
+const PARSER_VERSION = 2;
+
 function amazonSearchUrl(book) {
   return `${AMAZON}/s?k=${encodeURIComponent(searchTitle(book.title) + " " + book.author)}&i=digital-text`;
 }
 
 const MONEY = /(?:US\$|\$)\s?\d[\d,]*(?:\.\d{2})?/g;
 const isZero = (p) => /^\D*0+(\.0+)?$/.test(p.replace(/\s/g, ""));
+const KU_MARK = '[class*="kindle-unlimited" i], [class*="kindleunlimited" i], img[alt*="Kindle Unlimited" i], ' +
+  '[aria-label*="Kindle Unlimited" i], [id*="kindle-unlimited" i], [id*="kindleunlimited" i], #borrow-button, [id*="borrow" i]';
+const PRIME_MARK = '[class*="prime-reading" i], img[alt*="Prime Reading" i], [aria-label*="Prime Reading" i]';
+const FREE_WORDS = /(Read for Free|Read for \$0(\.00)?|Read now for free|Read with Kindle Unlimited|Read now with Kindle Unlimited|Free with Kindle Unlimited|Borrow for Free|Read with Prime|Free with Prime|\$0\.00\s*(with|on|Kindle Unlimited|Prime))/i;
+const isAudio = (s) => /audible|audiobook|audio cd|listen/i.test(s);
 
-// Reads one search result: title, ASIN, KU status and Kindle price.
+function blockedPage(res, html) {
+  return res.status === 503 || /validateCaptcha|api-services-support@amazon\.com|Type the characters you see/i.test(html);
+}
+async function getPage(url) {
+  const res = await fetch(url, { credentials: "include" });
+  const html = await res.text();
+  if (blockedPage(res, html)) throw new AmazonBlocked("Amazon asked for a CAPTCHA");
+  if (!res.ok) throw new Error(`Amazon answered ${res.status}`);
+  return new DOMParser().parseFromString(html, "text/html");
+}
+
+// One search result: title, ASIN and what it shows about KU and price.
 function readResult(r) {
   const h2 = r.querySelector("h2");
   const title = cleanText(h2 ? (h2.getAttribute("aria-label") || h2.textContent) : "");
-  const asin = r.getAttribute("data-asin");
   const text = cleanText(r.textContent);
-  const ku = /Kindle\s*Unlimited/i.test(text) &&
-    /(\$0\.00|Read for Free|Free with Kindle Unlimited|Read with Kindle Unlimited|Kindle Unlimited\s*\$0)/i.test(text);
-  let price = "";
+  const kuMark = !!r.querySelector(KU_MARK) || /Kindle\s*Unlimited/i.test(text);
+  const primeMark = !!r.querySelector(PRIME_MARK) || /Prime Reading/i.test(text);
+  // A $0.00 price counts only if it isn't the Audible trial line.
+  const zero = [...r.querySelectorAll(".a-price .a-offscreen")].some((e) =>
+    isZero(cleanText(e.textContent)) && !isAudio(cleanText((e.closest(".a-row, div") || e).textContent)));
+  const free = (kuMark || primeMark) && (zero || FREE_WORDS.test(text));
   const buy = text.match(/Or\s+((?:US\$|\$)\s?\d[\d,]*\.\d{2})\s+to buy/i);
-  if (buy) price = buy[1];
-  if (!price) {
-    for (const el of r.querySelectorAll(".a-price .a-offscreen")) {
-      const p = (cleanText(el.textContent).match(MONEY) || [])[0];
-      if (p && !isZero(p)) { price = p; break; }
-    }
+  let price = buy ? buy[1] : "";
+  if (!price) for (const e of r.querySelectorAll(".a-price .a-offscreen")) {
+    const p = (cleanText(e.textContent).match(MONEY) || [])[0];
+    if (p && !isZero(p)) { price = p; break; }
   }
-  if (!price) price = ((text.match(MONEY) || []).find((p) => !isZero(p))) || "";
   const author = cleanText((r.querySelector(".a-row.a-size-base.a-color-secondary") || {}).textContent || "");
-  return { title, asin, ku, price, author, sponsored: /\bSponsored\b/.test(text) };
+  return { title, asin: r.getAttribute("data-asin"), author, free, kuMark, primeMark, price,
+    sponsored: /\bSponsored\b/.test(text), evidence: text.slice(0, 300) };
 }
 
-// Checks one book on Amazon. Returns { status: "yes" | "no" | "notfound", price, asin, url, amazonTitle }.
-async function checkAmazon(book) {
-  const res = await fetch(amazonSearchUrl(book), { credentials: "include" });
-  const html = await res.text();
-  if (res.status === 503 || /validateCaptcha|api-services-support@amazon\.com|Type the characters you see/i.test(html)) {
-    throw new AmazonBlocked("Amazon asked for a CAPTCHA");
+// The Kindle edition's own page: the most reliable place to see "$0.00 / Read for Free".
+function readProductPage(doc) {
+  for (const junk of doc.querySelectorAll("script, style, noscript, #bookDescription_feature_div, #productDescription, " +
+    "#editorialReviews_feature_div, #customerReviews, #reviewsMedley, [id*='sims'], [id*='carousel' i]")) junk.remove();
+  const title = cleanText((doc.querySelector("#productTitle, #ebooksProductTitle") || {}).textContent || "");
+  const swatch = doc.querySelector("#tmm-grid-swatch-KINDLE, #tmm-grid-swatch-KINDLE_EBOOK, .swatchElement.selected, #tmmSwatches .selected");
+  const zones = [swatch, ...doc.querySelectorAll("#buybox, #rightCol, #corePriceDisplay_desktop_feature_div, #kindle-price, #formats, #tmmSwatches, #buyBoxAccordion")]
+    .filter(Boolean);
+  // Text of the buying areas, leaving out Audible upsells.
+  const pieces = [];
+  for (const z of zones) for (const e of z.querySelectorAll("span, a, div, button, input, i, img")) {
+    if (e.children.length > 3) continue;
+    const t = cleanText(e.textContent || e.getAttribute("value") || e.getAttribute("alt") || e.getAttribute("aria-label") || "");
+    if (t && !isAudio(t)) pieces.push(t);
   }
-  if (!res.ok) throw new Error(`Amazon answered ${res.status}`);
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const results = [...doc.querySelectorAll('[data-component-type="s-search-result"][data-asin]')]
-    .filter((r) => r.getAttribute("data-asin")).map(readResult);
-  const want = simplify(searchTitle(book.title));
-  const surname = simplify(book.author).split(" ").pop() || "";
-  let best = null, bestScore = 0;
-  for (const r of results) {
-    const got = simplify(r.title);
-    let score = 0;
-    if (got && got === want) score = 3;
-    else if (got && want && (got.startsWith(want) || want.startsWith(got))) score = 2;
-    if (!score) continue;
-    if (surname && simplify(r.author || r.title).includes(surname)) score += 1;
-    if (r.sponsored) score -= 0.5;
-    if (score > bestScore) { best = r; bestScore = score; }
+  const text = [...new Set(pieces)].join(" | ");
+  const marks = (sel) => zones.some((z) => [...z.querySelectorAll(sel)].some((e) => !isAudio(cleanText((e.parentElement || e).textContent))));
+  const kuMark = marks(KU_MARK) || /Kindle\s*Unlimited/i.test(text);
+  const primeMark = marks(PRIME_MARK) || /Prime Reading/i.test(text);
+  const kindlePrice = cleanText((doc.querySelector("#kindle-price") || {}).textContent || "") ||
+    cleanText(((swatch && swatch.querySelector(".slot-price, .a-color-price, .a-price .a-offscreen")) || {}).textContent || "");
+  const zeroKindle = !!kindlePrice && isZero((kindlePrice.match(MONEY) || ["x"])[0]);
+  const free = zeroKindle || ((kuMark || primeMark) && FREE_WORDS.test(text));
+  let price = "";
+  const buy = text.match(/(?:Or|Buy(?: now)?(?: with 1-Click)?(?: for)?|Kindle Price:?)\s*((?:US\$|\$)\s?\d[\d,]*\.\d{2})(?:\s+to buy)?/i);
+  if (buy && !isZero(buy[1])) price = buy[1];
+  if (!price) price = (text.match(MONEY) || []).find((p) => !isZero(p)) || "";
+  return { title, free, kuMark, primeMark, price, evidence: text.slice(0, 400) };
+}
+
+function program(r) {
+  return r.kuMark ? "Kindle Unlimited" : r.primeMark ? "Prime Reading" : "your membership";
+}
+
+// Checks one book. Returns { status: "yes" | "no" | "notfound", via, price, asin, url, ... }.
+// `known` is the previous result, so a book's Kindle edition is only searched for once.
+async function checkAmazon(book, known) {
+  let asin = known && known.asin, amazonTitle = known && known.amazonTitle, fromSearch = null;
+  if (!asin) {
+    const doc = await getPage(amazonSearchUrl(book));
+    const results = [...doc.querySelectorAll('[data-component-type="s-search-result"][data-asin]')]
+      .filter((r) => r.getAttribute("data-asin")).map(readResult);
+    const want = simplify(searchTitle(book.title));
+    const surname = simplify(book.author).split(" ").pop() || "";
+    let bestScore = 0;
+    for (const r of results) {
+      const got = simplify(r.title);
+      let score = 0;
+      if (got && got === want) score = 3;
+      else if (got && want && (got.startsWith(want) || want.startsWith(got))) score = 2;
+      if (!score) continue;
+      if (surname && simplify(r.author || r.title).includes(surname)) score += 1;
+      if (r.sponsored) score -= 0.5;
+      if (score > bestScore) { fromSearch = r; bestScore = score; }
+    }
+    if (!fromSearch || bestScore < 2) return { status: "notfound", checkedAt: Date.now(), v: PARSER_VERSION };
+    asin = fromSearch.asin; amazonTitle = fromSearch.title;
   }
-  if (!best || bestScore < 2) return { status: "notfound", checkedAt: Date.now() };
+  const url = `${AMAZON}/dp/${asin}`;
+  let page = null;
+  try {
+    page = readProductPage(await getPage(url));
+    if (!page.title) page = null; // not a product page layout we know
+  } catch (e) {
+    if (e instanceof AmazonBlocked || !fromSearch) throw e;
+  }
+  const r = page || fromSearch;
+  if (!r) throw new Error("Couldn't read the Kindle page");
   return {
-    status: best.ku ? "yes" : "no",
-    price: best.price || "",
-    asin: best.asin,
-    url: `${AMAZON}/dp/${best.asin}`,
-    amazonTitle: best.title,
+    status: r.free ? "yes" : "no",
+    via: r.free ? program(r) : "",
+    price: r.price || "",
+    asin, url, amazonTitle: (page && page.title) || amazonTitle,
+    source: page ? "book page" : "search results",
+    evidence: r.evidence,
     checkedAt: Date.now(),
+    v: PARSER_VERSION,
   };
 }

@@ -4,6 +4,7 @@
 const DEFAULTS = { profile: "https://www.goodreads.com/user/show/176924243-malavika-ramprasad", shelf: "to-read" };
 const REFRESH_MINUTES = 360;             // re-read Goodreads every 6 hours
 const KINDLE_MAX_AGE = 24 * 3600e3;      // re-check each book on Amazon once a day
+const PARSER_VERSION = 2;                // same as lib.js: older results are re-checked
 const CONCURRENCY = 3;                   // books checked at the same time
 const GAP_MS = 700;                      // pause between one worker's requests
 const STALE_JOB_MS = 10 * 60e3;          // a "running" job older than this was interrupted
@@ -116,7 +117,7 @@ async function doJob({ forceShelf = false, forceKindle = false, onlyIds = null }
   const todo = books.filter((b) => {
     if (onlyIds && !onlyIds.includes(b.id)) return false;
     const k = kindle[b.id];
-    return forceKindle || !k || k.status === "error" || Date.now() - (k.checkedAt || 0) > KINDLE_MAX_AGE;
+    return forceKindle || !k || k.status === "error" || k.v !== PARSER_VERSION || Date.now() - (k.checkedAt || 0) > KINDLE_MAX_AGE;
   }).sort((a, b) => (unseen.has(b.id) ? 1 : 0) - (unseen.has(a.id) ? 1 : 0));
 
   await setJob({ phase: "amazon", total: todo.length, done: 0, checking: [] });
@@ -128,7 +129,9 @@ async function doJob({ forceShelf = false, forceKindle = false, onlyIds = null }
       const b = todo[next++];
       checking.add(b.id);
       await setJob({ checking: [...checking] });
-      const res = await offscreen("amazon", { book: b });
+      // Reuse the Kindle edition found before, unless this is a forced re-check or an old-format result.
+      const known = kindle[b.id] && kindle[b.id].v === PARSER_VERSION && kindle[b.id].asin ? kindle[b.id] : null;
+      const res = await offscreen("amazon", { book: b, known });
       checking.delete(b.id);
       if (res.ok) kindle[b.id] = res.result;
       else if (res.blocked) blocked = true;

@@ -99,11 +99,11 @@ function render() {
 function card(b) {
   const s = kindleState(b), k = state.kindle[b.id] || {};
   const label = {
-    yes: "✓ Free to read", no: "Paid (not in KU)", notfound: "Not found on Kindle",
+    yes: k.via ? `✓ Free with ${k.via}` : "✓ Free to read", no: "Paid (not in KU)", notfound: "Not found on Kindle",
     checking: "Checking Amazon…", unchecked: "Not checked yet", error: "Couldn't check",
   }[s];
   const priceText =
-    s === "yes" ? (k.price ? `Free with KU · ${k.price} to buy` : "Free with KU") :
+    s === "yes" ? (k.price ? `$0.00 for you · ${k.price} to buy` : "$0.00 for you") :
     s === "no" ? (k.price || "Price not shown") :
     s === "notfound" ? "No Kindle edition found" : "—";
   return el("li", { "data-id": b.id },
@@ -119,7 +119,11 @@ function card(b) {
       el("div", { class: "row" },
         el("a", { href: k.url || amazonSearchUrl(b), target: "_blank", rel: "noopener" }, k.url ? "Open on Amazon ↗" : "Search Amazon ↗"),
         k.checkedAt ? el("span", { class: "muted" }, `checked ${ago(k.checkedAt)}`) : null,
-        s !== "checking" ? el("button", { on: { click: () => tell({ type: "check", id: b.id }) } }, "Check again") : null)));
+        s !== "checking" ? el("button", { on: { click: () => tell({ type: "check", id: b.id }) } }, "Check again") : null),
+      k.evidence ? el("details", { class: "why" },
+        el("summary", {}, "What Amazon showed"),
+        el("p", {}, `From the ${k.source || "Amazon page"}${k.amazonTitle ? ` for “${k.amazonTitle}”` : ""}: `),
+        el("p", { class: "evidence" }, k.evidence)) : null));
 }
 
 // ---------- events ----------
