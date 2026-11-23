@@ -59,6 +59,8 @@ li img, .nocover { width: 56px; height: 84px; object-fit: cover; border-radius: 
 .row a.check:hover { text-decoration: underline; }
 .mark { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 8px; padding: 3px 9px; font: inherit; font-size: .82rem; cursor: pointer; }
 .mark:hover { border-color: var(--muted); }
+.mark.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.price { width: 9.5em; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: .88rem; }
 .empty { color: var(--muted); text-align: center; padding: 32px 0; }
 footer { margin-top: 28px; color: var(--muted); font-size: .82rem; }
 </style>
@@ -71,13 +73,13 @@ footer { margin-top: 28px; color: var(--muted); font-size: .82rem; }
   <input class="search" id="q" type="search" placeholder="Search title or author" aria-label="Search books">
   <div class="filters" role="group" aria-label="Filter by Kindle Unlimited status">
     <button data-f="all" aria-pressed="true">All</button>
-    <button data-f="yes" aria-pressed="false">In Kindle Unlimited</button>
+    <button data-f="yes" aria-pressed="false">Free on KU</button>
+    <button data-f="no" aria-pressed="false">Paid</button>
     <button data-f="unknown" aria-pressed="false">Not checked</button>
-    <button data-f="no" aria-pressed="false">Not in KU</button>
   </div>
   <ul id="list"></ul>
   <footer>
-    Books refresh daily from Goodreads. Kindle Unlimited marks are saved in this browser.
+    Books refresh daily from Goodreads. KU status and prices are what you entered after checking Amazon, saved in this browser.
     <a href="#" id="export">Copy marks</a> · <a href="#" id="import">Paste marks</a>
   </footer>
 </main>
@@ -85,17 +87,34 @@ footer { margin-top: 28px; color: var(--muted); font-size: .82rem; }
 const KEY = "whats-next-ku-v1";
 let data = { books: [] }, filter = "all", query = "", repoMarks = {};
 
+// A mark is { ku: "yes" | "no", price?: "$12.99" }. Older plain "yes"/"no" strings still work.
+function normalize(v) {
+  if (v === "yes" || v === "no") return { ku: v };
+  if (v && (v.ku === "yes" || v.ku === "no")) return { ku: v.ku, ...(v.price ? { price: String(v.price).slice(0, 20) } : {}) };
+  return null;
+}
+function readLocal() {
+  try { return JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { return {}; }
+}
 function loadMarks() {
-  let local = {};
-  try { local = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
-  return { ...repoMarks, ...local };
+  const out = {};
+  for (const [id, v] of Object.entries({ ...repoMarks, ...readLocal() })) {
+    const m = normalize(v);
+    if (m) out[id] = m;
+  }
+  return out;
 }
 function saveMark(id, value) {
-  let local = {};
-  try { local = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+  const local = readLocal();
   if (value === null) delete local[id]; else local[id] = value;
   try { localStorage.setItem(KEY, JSON.stringify(local)); } catch (e) {}
 }
+function formatPrice(p) {
+  p = (p || "").trim();
+  if (!p) return "";
+  return /^\d/.test(p) ? "$" + p : p;
+}
+let editing = null; // id of the book whose price is being typed
 function amazonUrl(b) {
   const store = data.amazon_store || "www.amazon.com";
   const q = encodeURIComponent(`${b.search_title} ${b.author}`);
@@ -116,18 +135,33 @@ function render() {
   list.replaceChildren();
   const q = query.toLowerCase();
   const shown = data.books.filter(b => {
-    const s = marks[b.id] || "unknown";
+    const s = marks[b.id] ? marks[b.id].ku : "unknown";
     if (filter !== "all" && s !== filter) return false;
     return !q || `${b.title} ${b.author}`.toLowerCase().includes(q);
   });
   for (const b of shown) {
-    const s = marks[b.id] || "unknown";
+    const m = marks[b.id];
+    const s = m ? m.ku : "unknown";
+    const price = m && formatPrice(m.price);
     const badge = el("span", { class: "badge " + (s === "unknown" ? "" : s) },
-      s === "yes" ? "✓ Kindle Unlimited" : s === "no" ? "Not in KU" : "KU not checked");
-    const buttons = s === "unknown"
-      ? [el("button", { class: "mark", on: { click: () => { saveMark(b.id, "yes"); render(); } } }, "It's in KU"),
-         el("button", { class: "mark", on: { click: () => { saveMark(b.id, "no"); render(); } } }, "Not in KU")]
-      : [el("button", { class: "mark", on: { click: () => { saveMark(b.id, null); render(); } } }, "Undo")];
+      s === "yes" ? "✓ Free on KU" : s === "no" ? (price ? `Paid · ${price}` : "Paid") : "KU not checked");
+    let buttons;
+    if (editing === b.id) {
+      const input = el("input", { class: "price", type: "text", inputmode: "decimal", placeholder: "Price, e.g. 12.99",
+        "aria-label": `Kindle price for ${b.title}`, value: (m && m.price) || "" });
+      const save = () => { saveMark(b.id, { ku: "no", ...(input.value.trim() ? { price: input.value.trim() } : {}) }); editing = null; render(); };
+      input.addEventListener("keydown", e => { if (e.key === "Enter") save(); if (e.key === "Escape") { editing = null; render(); } });
+      buttons = [input, el("button", { class: "mark primary", on: { click: save } }, "Save"),
+                 el("button", { class: "mark", on: { click: () => { editing = null; render(); } } }, "Cancel")];
+      setTimeout(() => input.focus(), 0);
+    } else if (s === "unknown") {
+      buttons = [el("button", { class: "mark", on: { click: () => { saveMark(b.id, { ku: "yes" }); render(); } } }, "Free on KU"),
+                 el("button", { class: "mark", on: { click: () => { editing = b.id; render(); } } }, "Paid…")];
+    } else {
+      buttons = [
+        ...(s === "no" ? [el("button", { class: "mark", on: { click: () => { editing = b.id; render(); } } }, price ? "Edit price" : "Add price")] : []),
+        el("button", { class: "mark", on: { click: () => { saveMark(b.id, null); render(); } } }, "Undo")];
+    }
     list.append(el("li", {},
       b.cover ? el("img", { src: b.cover, alt: "", loading: "lazy" }) : el("div", { class: "nocover" }),
       el("div", {},
@@ -138,11 +172,12 @@ function render() {
           ...buttons))));
   }
   if (!shown.length) list.append(el("li", { class: "empty", style: "display:block" }, "No books match."));
-  const yes = data.books.filter(b => marks[b.id] === "yes").length;
-  const unk = data.books.filter(b => !marks[b.id]).length;
+  const yes = data.books.filter(b => marks[b.id] && marks[b.id].ku === "yes").length;
+  const paid = data.books.filter(b => marks[b.id] && marks[b.id].ku === "no").length;
+  const unk = data.books.length - yes - paid;
   const when = data.fetched_at ? new Date(data.fetched_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
   document.getElementById("sub").textContent =
-    `${data.books.length} books to read · ${yes} in Kindle Unlimited · ${unk} not checked yet` + (when ? ` · updated ${when}` : "");
+    `${data.books.length} books to read · ${yes} free on KU · ${paid} paid · ${unk} not checked` + (when ? ` · updated ${when}` : "");
 }
 
 document.querySelectorAll(".filters button").forEach(btn => btn.addEventListener("click", () => {
@@ -163,7 +198,7 @@ document.getElementById("import").addEventListener("click", e => {
   if (!text) return;
   try {
     const incoming = JSON.parse(text);
-    for (const [id, v] of Object.entries(incoming)) if (v === "yes" || v === "no") saveMark(id, v);
+    for (const [id, v] of Object.entries(incoming)) { const m = normalize(v); if (m) saveMark(id, m); }
     render();
   } catch (err) { alert("That didn't look like copied marks."); }
 });
