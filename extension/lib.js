@@ -71,7 +71,7 @@ async function goodreadsShelf(uid, shelf = "to-read") {
 
 // ---------- Amazon ----------
 // Bump when the way Amazon pages are read changes: every saved result is then re-checked.
-const PARSER_VERSION = 2;
+const PARSER_VERSION = 3;
 
 function amazonSearchUrl(book) {
   return `${AMAZON}/s?k=${encodeURIComponent(searchTitle(book.title) + " " + book.author)}&i=digital-text`;
@@ -81,6 +81,12 @@ const MONEY = /(?:US\$|\$)\s?\d[\d,]*(?:\.\d{2})?/g;
 const isZero = (p) => /^\D*0+(\.0+)?$/.test(p.replace(/\s/g, ""));
 const KU_MARK = '[class*="kindle-unlimited" i], [class*="kindleunlimited" i], img[alt*="Kindle Unlimited" i], ' +
   '[aria-label*="Kindle Unlimited" i], [id*="kindle-unlimited" i], [id*="kindleunlimited" i], #borrow-button, [id*="borrow" i]';
+// Amazon's newer "kindle+" membership logo.
+const KPLUS_MARK = '[class*="kindle-plus" i], [class*="kindleplus" i], [class*="kindle_plus" i], img[alt*="kindle+" i], ' +
+  'img[alt*="kindle plus" i], [aria-label*="kindle+" i], [aria-label*="kindle plus" i], img[src*="kindle-plus" i], img[src*="kindleplus" i], img[src*="kindle_plus" i]';
+const KPLUS_WORDS = /kindle\s*\+|kindle\s*plus/i;
+// Wording Amazon only shows when the book is free to read for you.
+const INCLUDED = /(Included with your\s*(kindle\s*\+|kindle\s*plus|kindle unlimited|prime)?\s*membership|Add to library)/i;
 const PRIME_MARK = '[class*="prime-reading" i], img[alt*="Prime Reading" i], [aria-label*="Prime Reading" i]';
 const FREE_WORDS = /(Read for Free|Read for \$0(\.00)?|Read now for free|Read with Kindle Unlimited|Read now with Kindle Unlimited|Free with Kindle Unlimited|Borrow for Free|Read with Prime|Free with Prime|\$0\.00\s*(with|on|Kindle Unlimited|Prime))/i;
 const isAudio = (s) => /audible|audiobook|audio cd|listen/i.test(s);
@@ -103,10 +109,11 @@ function readResult(r) {
   const text = cleanText(r.textContent);
   const kuMark = !!r.querySelector(KU_MARK) || /Kindle\s*Unlimited/i.test(text);
   const primeMark = !!r.querySelector(PRIME_MARK) || /Prime Reading/i.test(text);
+  const kplusMark = !!r.querySelector(KPLUS_MARK) || KPLUS_WORDS.test(text);
   // A $0.00 price counts only if it isn't the Audible trial line.
   const zero = [...r.querySelectorAll(".a-price .a-offscreen")].some((e) =>
     isZero(cleanText(e.textContent)) && !isAudio(cleanText((e.closest(".a-row, div") || e).textContent)));
-  const free = (kuMark || primeMark) && (zero || FREE_WORDS.test(text));
+  const free = INCLUDED.test(text) || ((kuMark || primeMark || kplusMark) && (zero || FREE_WORDS.test(text)));
   const buy = text.match(/Or\s+((?:US\$|\$)\s?\d[\d,]*\.\d{2})\s+to buy/i);
   let price = buy ? buy[1] : "";
   if (!price) for (const e of r.querySelectorAll(".a-price .a-offscreen")) {
@@ -114,42 +121,56 @@ function readResult(r) {
     if (p && !isZero(p)) { price = p; break; }
   }
   const author = cleanText((r.querySelector(".a-row.a-size-base.a-color-secondary") || {}).textContent || "");
-  return { title, asin: r.getAttribute("data-asin"), author, free, kuMark, primeMark, price,
+  return { title, asin: r.getAttribute("data-asin"), author, free, kuMark, primeMark, kplusMark, price,
     sponsored: /\bSponsored\b/.test(text), evidence: text.slice(0, 300) };
 }
 
-// The Kindle edition's own page: the most reliable place to see "$0.00 / Read for Free".
+// The Kindle edition's own page: the most reliable place to see "$0.00 / Included with your membership".
+// Amazon changes this layout often, so it reads short bits of text from the whole page (minus the
+// description, reviews, ads and recommendations) rather than relying on particular element IDs.
 function readProductPage(doc) {
   for (const junk of doc.querySelectorAll("script, style, noscript, #bookDescription_feature_div, #productDescription, " +
-    "#editorialReviews_feature_div, #customerReviews, #reviewsMedley, [id*='sims'], [id*='carousel' i]")) junk.remove();
+    "#editorialReviews_feature_div, #customerReviews, #reviewsMedley, [id*='sims'], [id*='carousel' i], " +
+    "[id^='ad-' i], [id^='ad_' i], [id*='sponsored' i], [class*='sponsored' i], [data-ad-details], #nav-main, #navbar, #navFooter")) junk.remove();
   const title = cleanText((doc.querySelector("#productTitle, #ebooksProductTitle") || {}).textContent || "");
-  const swatch = doc.querySelector("#tmm-grid-swatch-KINDLE, #tmm-grid-swatch-KINDLE_EBOOK, .swatchElement.selected, #tmmSwatches .selected");
-  const zones = [swatch, ...doc.querySelectorAll("#buybox, #rightCol, #corePriceDisplay_desktop_feature_div, #kindle-price, #formats, #tmmSwatches, #buyBoxAccordion")]
-    .filter(Boolean);
-  // Text of the buying areas, leaving out Audible upsells.
+  const textOf = (e) => cleanText(e.textContent || e.getAttribute("value") || e.getAttribute("alt") || e.getAttribute("aria-label") || "");
+  const body = doc.body || doc.documentElement;
+
+  // Short bits of text, leaving out Audible upsells and long paragraphs.
   const pieces = [];
-  for (const z of zones) for (const e of z.querySelectorAll("span, a, div, button, input, i, img")) {
+  for (const e of body.querySelectorAll("span, a, div, button, input, i, img, p, h2, h3, h4")) {
     if (e.children.length > 3) continue;
-    const t = cleanText(e.textContent || e.getAttribute("value") || e.getAttribute("alt") || e.getAttribute("aria-label") || "");
-    if (t && !isAudio(t)) pieces.push(t);
+    const t = textOf(e);
+    if (t && t.length <= 160 && !isAudio(t)) pieces.push(t);
   }
   const text = [...new Set(pieces)].join(" | ");
-  const marks = (sel) => zones.some((z) => [...z.querySelectorAll(sel)].some((e) => !isAudio(cleanText((e.parentElement || e).textContent))));
+
+  // The Kindle format tile, e.g. "Kindle $0.00 kindle+ or $12.99 to buy".
+  const tiles = [...body.querySelectorAll("#tmm-grid-swatch-KINDLE, #tmm-grid-swatch-KINDLE_EBOOK, #tmmSwatches .selected, li, div, a, span")]
+    .map((e) => ({ e, t: cleanText(e.textContent) }))
+    .filter(({ t }) => /^Kindle\b(?!\s*Unlimited)/i.test(t) && t.length <= 150 && /\$\s?\d/.test(t) && !isAudio(t))
+    .sort((a, b) => a.t.length - b.t.length);
+  const tile = tiles[0] ? tiles[0].t : cleanText((doc.querySelector("#kindle-price") || {}).textContent || "");
+  const tileFirstPrice = (tile.match(MONEY) || [])[0];
+  const zeroKindle = !!tileFirstPrice && isZero(tileFirstPrice);
+
+  const marks = (sel) => [...body.querySelectorAll(sel)].some((e) => !isAudio(cleanText((e.parentElement || e).textContent)));
   const kuMark = marks(KU_MARK) || /Kindle\s*Unlimited/i.test(text);
   const primeMark = marks(PRIME_MARK) || /Prime Reading/i.test(text);
-  const kindlePrice = cleanText((doc.querySelector("#kindle-price") || {}).textContent || "") ||
-    cleanText(((swatch && swatch.querySelector(".slot-price, .a-color-price, .a-price .a-offscreen")) || {}).textContent || "");
-  const zeroKindle = !!kindlePrice && isZero((kindlePrice.match(MONEY) || ["x"])[0]);
-  const free = zeroKindle || ((kuMark || primeMark) && FREE_WORDS.test(text));
-  let price = "";
-  const buy = text.match(/(?:Or|Buy(?: now)?(?: with 1-Click)?(?: for)?|Kindle Price:?)\s*((?:US\$|\$)\s?\d[\d,]*\.\d{2})(?:\s+to buy)?/i);
-  if (buy && !isZero(buy[1])) price = buy[1];
-  if (!price) price = (text.match(MONEY) || []).find((p) => !isZero(p)) || "";
-  return { title, free, kuMark, primeMark, price, evidence: text.slice(0, 400) };
+  const kplusMark = marks(KPLUS_MARK) || KPLUS_WORDS.test(text);
+  const free = zeroKindle || INCLUDED.test(text) || ((kuMark || primeMark || kplusMark) && FREE_WORDS.test(text));
+
+  // Price to buy: "or $12.99 to buy" on the Kindle tile first, then the buy box wording.
+  const BUY = /(?:\bor|\bBuy(?: now)?(?: with 1-Click)?(?: for)?|Kindle Price:?)\s*(?:\|\s*)?((?:US\$|\$)\s?\d[\d,]*\.\d{2})/i;
+  const buyIn = (t) => { const m = (t || "").match(BUY); return m && !isZero(m[1]) ? m[1] : ""; };
+  const price = buyIn(tile) || (tileFirstPrice && !isZero(tileFirstPrice) ? tileFirstPrice : "") || buyIn(text);
+  const evidence = [tile && `Kindle tile: ${tile}`, (text.match(INCLUDED) || [])[0] && `Buy box: ${text.match(INCLUDED)[0]}`]
+    .filter(Boolean).join(" · ") || text.slice(0, 400);
+  return { title, free, kuMark, primeMark, kplusMark, price, evidence: evidence.slice(0, 400) };
 }
 
 function program(r) {
-  return r.kuMark ? "Kindle Unlimited" : r.primeMark ? "Prime Reading" : "your membership";
+  return r.kplusMark ? "Kindle+" : r.kuMark ? "Kindle Unlimited" : r.primeMark ? "Prime Reading" : "your membership";
 }
 
 // Checks one book. Returns { status: "yes" | "no" | "notfound", via, price, asin, url, ... }.

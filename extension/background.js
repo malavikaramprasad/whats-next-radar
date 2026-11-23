@@ -4,7 +4,7 @@
 const DEFAULTS = { profile: "https://www.goodreads.com/user/show/176924243-malavika-ramprasad", shelf: "to-read" };
 const REFRESH_MINUTES = 360;             // re-read Goodreads every 6 hours
 const KINDLE_MAX_AGE = 24 * 3600e3;      // re-check each book on Amazon once a day
-const PARSER_VERSION = 2;                // same as lib.js: older results are re-checked
+const PARSER_VERSION = 3;                // same as lib.js: older results are re-checked
 const CONCURRENCY = 3;                   // books checked at the same time
 const GAP_MS = 700;                      // pause between one worker's requests
 const STALE_JOB_MS = 10 * 60e3;          // a "running" job older than this was interrupted
@@ -157,7 +157,7 @@ async function updateBadge() {
   await chrome.action.setBadgeBackgroundColor({ color: freeNew ? "#1d7a46" : "#8a4b2a" });
   await chrome.action.setTitle({
     title: unseen.length
-      ? `What's Next: ${unseen.length} new book${unseen.length > 1 ? "s" : ""} on your shelf` + (freeNew ? ` (${freeNew} free on KU)` : "")
+      ? `What's Next: ${unseen.length} new book${unseen.length > 1 ? "s" : ""} on your shelf` + (freeNew ? ` (${freeNew} free to read)` : "")
       : "What's Next",
   });
 }

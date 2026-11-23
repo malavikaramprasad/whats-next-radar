@@ -89,7 +89,7 @@ function render() {
   const fresh = state.books.filter((b) => isNew(b.id)).length;
   $("sub").textContent = state.books.length
     ? `${state.books.length} books to read` + (fresh ? ` (${fresh} new)` : "") +
-      ` · ${n("yes")} free on KU · ${n("no")} paid` +
+      ` · ${n("yes")} free to read · ${n("no")} paid` +
       (n("notfound") ? ` · ${n("notfound")} not on Kindle` : "") +
       (n("unchecked") + n("error") ? ` · ${n("unchecked") + n("error")} not checked yet` : "") +
       (state.booksFetchedAt ? ` · shelf updated ${ago(state.booksFetchedAt)}` : "")
@@ -99,7 +99,7 @@ function render() {
 function card(b) {
   const s = kindleState(b), k = state.kindle[b.id] || {};
   const label = {
-    yes: k.via ? `✓ Free with ${k.via}` : "✓ Free to read", no: "Paid (not in KU)", notfound: "Not found on Kindle",
+    yes: k.via ? `✓ Free with ${k.via}` : "✓ Free to read", no: "Paid (not included)", notfound: "Not found on Kindle",
     checking: "Checking Amazon…", unchecked: "Not checked yet", error: "Couldn't check",
   }[s];
   const priceText =
@@ -114,7 +114,7 @@ function card(b) {
         el("a", { href: b.goodreadsUrl, target: "_blank", rel: "noopener" }, b.title)),
       el("p", { class: "author" }, b.author),
       el("dl", { class: "details" },
-        el("div", {}, el("dt", {}, "Kindle Unlimited"), el("dd", {}, el("span", { class: `badge ${s}` }, label))),
+        el("div", {}, el("dt", {}, "Membership"), el("dd", {}, el("span", { class: `badge ${s}` }, label))),
         el("div", {}, el("dt", {}, "Kindle price"), el("dd", { class: s === "no" && k.price ? "price-value" : "muted" }, priceText))),
       el("div", { class: "row" },
         el("a", { href: k.url || amazonSearchUrl(b), target: "_blank", rel: "noopener" }, k.url ? "Open on Amazon ↗" : "Search Amazon ↗"),

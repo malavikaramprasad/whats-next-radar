@@ -19,7 +19,7 @@ It keeps itself up to date in the background while Chrome is running; you don't 
   (green if any are free on Kindle Unlimited).
 - **Amazon:** finds each book's Kindle edition once, then reads that book's own page (where Amazon
   shows $0.00 / Read for Free to members). Checks 3 books at a time and keeps each result for 24 hours.
-  A book counts as free if Amazon shows it at $0.00 through Kindle Unlimited or Prime Reading.
+  A book counts as free if Amazon shows it at $0.00 for you (kindle+, Kindle Unlimited or Prime Reading).
   Each card has **What Amazon showed**, the text the result was based on.
 
 Click the **What's Next** icon to see the list, with books free on Kindle Unlimited at the top, then paid, then the rest: **✓ Free to read** (Kindle Unlimited), **Paid** with
