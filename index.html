@@ -42,12 +42,12 @@ h1 { font-size: 1.6rem; margin: 0 0 4px; }
   background: var(--card); color: var(--ink); font: inherit; margin-bottom: 12px;
 }
 ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-li {
+#list > li {
   display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; align-items: start;
   background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px;
 }
-li > div { min-width: 0; }
-li img, .nocover { width: 64px; height: 96px; object-fit: cover; border-radius: 4px; background: var(--unk-bg); }
+#list > li > div { min-width: 0; }
+#list > li img, .nocover { width: 64px; height: 96px; object-fit: cover; border-radius: 4px; background: var(--unk-bg); }
 .details { margin: 0 0 12px; display: grid; gap: 6px; }
 .details > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .details dt { color: var(--muted); font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
@@ -58,8 +58,8 @@ li img, .nocover { width: 64px; height: 96px; object-fit: cover; border-radius: 
 .details dd.price-value { font-weight: 700; font-size: 1rem; }
 .details dd.muted { color: var(--muted); }
 @media (max-width: 340px) {
-  li { grid-template-columns: 48px minmax(0, 1fr); gap: 10px; padding: 12px; }
-  li img, .nocover { width: 48px; height: 72px; }
+  #list > li { grid-template-columns: 48px minmax(0, 1fr); gap: 10px; padding: 12px; }
+  #list > li img, .nocover { width: 48px; height: 72px; }
 }
 .title { font-weight: 600; margin: 0; overflow-wrap: anywhere; }
 .title a { color: inherit; text-decoration: none; }
@@ -77,12 +77,37 @@ li img, .nocover { width: 64px; height: 96px; object-fit: cover; border-radius: 
 .price { width: 9.5em; max-width: 100%; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: .88rem; }
 .empty { color: var(--muted); text-align: center; padding: 32px 0; }
 footer { margin-top: 28px; color: var(--muted); font-size: .82rem; }
+.muted { color: var(--muted); }
+.helper { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; font-size: .92rem; }
+.helper summary { cursor: pointer; font-weight: 600; }
+.helper ol { margin: 10px 0 4px; padding-left: 1.3em; display: grid; gap: 10px; }
+.helper a { color: var(--accent); }
+.bookmarklet { display: inline-block; margin: 6px 8px 6px 0; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: var(--bg) !important; font-weight: 700; text-decoration: none; cursor: grab; }
+.banner { border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: .92rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; background: var(--ku-bg); color: var(--ink); border: 1px solid var(--line); }
+.banner.warn { background: var(--no-bg); }
+.banner .row { gap: 8px; }
+.banner select { flex: 1 1 14em; min-width: 0; width: 100%; max-width: 100%; font: inherit; font-size: .88rem; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+#list > li.flash { outline: 2px solid var(--ku); outline-offset: 2px; }
 </style>
 </head>
 <body>
 <main>
   <h1>What's Next</h1>
   <p class="sub" id="sub">Loading your Goodreads to-read shelf…</p>
+
+  <div class="banner" id="banner" hidden role="status"></div>
+
+  <details class="helper" id="helper">
+    <summary>⚡ One-click Amazon helper: save KU status and price without typing</summary>
+    <ol>
+      <li><strong>Install it once (laptop or desktop browser):</strong> drag this button to your bookmarks bar.
+        <a class="bookmarklet" id="bookmarklet" href="#" title="Drag me to your bookmarks bar">＋ Save to What's Next</a>
+        <span class="muted">Can't drag? <a href="#" id="copyHelper">Copy the helper code</a>, create a new bookmark, and paste it as the bookmark's URL.</span>
+      </li>
+      <li>On a book below, tap <strong>Check on Amazon ↗</strong> and open the Kindle edition's page.</li>
+      <li>Click the <strong>Save to What's Next</strong> bookmark. It reads the Kindle Unlimited status and Kindle price from that page, asks you to confirm, then saves them here.</li>
+    </ol>
+  </details>
 
   <input class="search" id="q" type="search" placeholder="Search title or author" aria-label="Search books">
   <div class="filters" role="group" aria-label="Filter by Kindle Unlimited status">
@@ -93,7 +118,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: .82rem; }
   </div>
   <ul id="list"></ul>
   <footer>
-    Books refresh daily from Goodreads. KU status and prices are what you entered after checking Amazon, saved in this browser.
+    Books refresh daily from Goodreads. KU status and prices come from Amazon pages you checked (by hand or with the helper) and are saved in this browser.
     <a href="#" id="export">Copy marks</a> · <a href="#" id="import">Paste marks</a>
   </footer>
 </main>
@@ -129,6 +154,128 @@ function formatPrice(p) {
   return /^\d/.test(p) ? "$" + p : p;
 }
 let editing = null; // id of the book whose price is being typed
+let flashId = null; // book just saved by the Amazon helper
+const PENDING = "whats-next-pending"; // the book whose "Check on Amazon" link was last opened
+
+// ---- One-click Amazon helper (bookmarklet) ----
+// Runs on the Amazon page in the person's own browser: reads what Amazon shows them there,
+// then opens this page with the result in the address (#save=...). Nothing is sent anywhere else.
+function amazonHelper(PAGE) {
+  try {
+    var q = function (s) { try { return document.querySelector(s); } catch (e) { return null; } };
+    var text = function (e) { return e ? (e.innerText || e.textContent || "").replace(/\s+/g, " ").trim() : ""; };
+    if (!/(^|\.)amazon\./.test(location.hostname)) {
+      alert("What's Next helper: open a Kindle book's page on Amazon first, then click this bookmark."); return;
+    }
+    var title = text(q("#productTitle") || q("#ebooksProductTitle") || q("#title"));
+    if (!title) {
+      alert("What's Next helper: this doesn't look like a book's page. Open the book itself (not the search results) and try again."); return;
+    }
+    var authors = Array.prototype.map.call(document.querySelectorAll("#bylineInfo .author a, #bylineInfo a.contributorNameID"), text)
+      .filter(function (s) { return s && !/^\(|Follow|Visit/i.test(s); });
+    var author = authors[0] || "";
+    // Only look where Amazon shows formats and buying options, not the description (authors mention KU there).
+    var zones = ["#tmmSwatches", "#tmm-grid-swatch-KINDLE", "#formats", "#rightCol", "#buybox", "#buyBoxAccordion"]
+      .map(q).filter(Boolean);
+    var zoneText = zones.map(text).join(" | ");
+    var kuBadge = zones.some(function (z) { return z.querySelector('img[alt*="Kindle Unlimited" i], [id*="borrow" i], [id*="kindle-unlimited" i]'); });
+    var ku = kuBadge || (/Kindle\s*Unlimited/i.test(zoneText) && /(Read for Free|Read for \$?0(\.00)?|\$0\.00|Read with Kindle Unlimited|Borrow for Free)/i.test(zoneText));
+    var money = /(?:[$£€₹]|US\$|CA\$|A\$)\s?\d[\d,]*(?:\.\d{2})?/g;
+    var isZero = function (p) { return /^\D*0+(\.0+)?$/.test(p.replace(/\s/g, "")); };
+    var price = "";
+    ["#kindle-price", "#tmm-grid-swatch-KINDLE .slot-price", ".kindle-price", "#corePriceDisplay_desktop_feature_div .a-offscreen",
+     "#corePrice_feature_div .a-offscreen", "#buybox .a-color-price", "#rightCol .a-price .a-offscreen"].some(function (s) {
+      var found = (text(q(s)) || "").match(money) || [];
+      for (var i = 0; i < found.length; i++) if (!isZero(found[i])) { price = found[i]; return true; }
+      return false;
+    });
+    if (!price) {
+      var all = zoneText.match(money) || [];
+      for (var i = 0; i < all.length; i++) if (!isZero(all[i])) { price = all[i]; break; }
+    }
+    var msg = "Save to What's Next?\n\n" + title + (author ? "\nby " + author : "") +
+      "\n\nKindle Unlimited: " + (ku ? "YES - free to read" : "No") +
+      "\nKindle price: " + (price || "not found") +
+      "\n\nPress Cancel if this looks wrong, then use the buttons on What's Next instead.";
+    if (!confirm(msg)) return;
+    var data = { t: title, a: author, ku: ku ? "yes" : "no", p: price, u: location.origin + location.pathname };
+    var url = PAGE + "#save=" + encodeURIComponent(JSON.stringify(data));
+    var w = window.open(url, "whats-next");
+    if (!w) location.href = url;
+  } catch (e) {
+    alert("What's Next helper hit a problem: " + e.message);
+  }
+}
+function helperCode() {
+  const page = location.origin + location.pathname;
+  return "javascript:(" + amazonHelper.toString().replace(/\n\s*\/\/[^\n]*/g, "").replace(/\s*\n\s*/g, " ") + ")(" + JSON.stringify(page) + ");void 0";
+}
+
+function simplify(s) {
+  return (s || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, " ").split(":")[0]
+    .replace(/&/g, " and ").replace(/[^a-z0-9 ]/g, " ").replace(/\b(the|a|an)\b/g, " ").replace(/\s+/g, " ").trim();
+}
+function findBook(t, a) {
+  const st = simplify(t), surname = simplify(a).split(" ").pop() || "";
+  let pending = null;
+  try { const p = JSON.parse(localStorage.getItem(PENDING) || "null"); if (p && Date.now() - p.at < 3 * 3600e3) pending = p.id; } catch (e) {}
+  let best = null, bestScore = 0;
+  for (const b of data.books) {
+    const bt = simplify(b.search_title || b.title);
+    let score = 0;
+    if (bt && st === bt) score = 3;
+    else if (bt && st && (st.startsWith(bt) || bt.startsWith(st))) score = 2;
+    if (score && surname && simplify(b.author).includes(surname)) score += 1;
+    if (score && b.id === pending) score += 0.5;
+    if (score > bestScore) { best = b; bestScore = score; }
+  }
+  return { book: bestScore >= 2 ? best : null, pending };
+}
+function showBanner(content, warn) {
+  const banner = document.getElementById("banner");
+  banner.replaceChildren(...content);
+  banner.className = "banner" + (warn ? " warn" : "");
+  banner.hidden = false;
+  banner.scrollIntoView({ block: "nearest" });
+}
+function bookPicker(selectedId, onSave, label) {
+  const select = el("select", { "aria-label": "Choose the book" },
+    el("option", { value: "" }, "Choose a book…"),
+    ...data.books.map(b => el("option", { value: b.id, ...(b.id === selectedId ? { selected: "" } : {}) }, `${b.title} — ${b.author}`)));
+  return el("div", { class: "row" }, select,
+    el("button", { class: "mark primary", on: { click: () => select.value && onSave(select.value) } }, label));
+}
+function handleSaveHash() {
+  if (!location.hash.startsWith("#save=")) return;
+  let got;
+  try { got = JSON.parse(decodeURIComponent(location.hash.slice(6))); } catch (e) { got = null; }
+  history.replaceState(null, "", location.pathname + location.search);
+  if (!got || (got.ku !== "yes" && got.ku !== "no")) return;
+  const mark = { ku: got.ku, ...(got.p ? { price: String(got.p).slice(0, 20) } : {}) };
+  const label = got.ku === "yes" ? "✓ Free on KU" : "Paid (not in KU)";
+  const saveTo = (id) => {
+    saveMark(id, mark);
+    flashId = id;
+    try { localStorage.removeItem(PENDING); } catch (e) {}
+    const b = data.books.find(x => x.id === id);
+    showBanner([
+      el("div", {}, el("strong", {}, "Saved from Amazon: "), `${b.title} — ${label}${mark.price ? ` · ${mark.price}` : ""}`),
+      el("details", {}, el("summary", { class: "muted" }, "Wrong book?"),
+        bookPicker(null, (other) => { saveMark(id, null); saveTo(other); }, "Move it here")),
+    ]);
+    render();
+    const li = document.querySelector(`li[data-id="${CSS.escape(id)}"]`);
+    if (li) li.scrollIntoView({ block: "center" });
+  };
+  const { book, pending } = findBook(got.t, got.a);
+  if (book) return saveTo(book.id);
+  showBanner([
+    el("div", {}, el("strong", {}, "Which book is this? "),
+      `Amazon says “${got.t}”${got.a ? ` by ${got.a}` : ""} — ${label}${mark.price ? ` · ${mark.price}` : ""}. It didn't match a title on your list.`),
+    bookPicker(pending, saveTo, "Save"),
+  ], true);
+}
 function amazonUrl(b) {
   const store = data.amazon_store || "www.amazon.com";
   const q = encodeURIComponent(`${b.search_title} ${b.author}`);
@@ -159,8 +306,8 @@ function render() {
     const price = m && formatPrice(m.price);
     const kuValue = el("dd", {}, el("span", { class: "badge " + (s === "unknown" ? "" : s) },
       s === "yes" ? "✓ Free to read" : s === "no" ? "Paid (not in KU)" : "Not checked yet"));
-    const priceValue = el("dd", { class: price ? "price-value" : "muted" },
-      price ? price : s === "yes" ? "Free with KU" : s === "no" ? "Not added" : "—");
+    const priceValue = el("dd", { class: price && s !== "yes" ? "price-value" : "muted" },
+      s === "yes" ? (price ? `Free with KU · ${price} to buy` : "Free with KU") : price ? price : s === "no" ? "Not added" : "—");
     const details = el("dl", { class: "details" },
       el("div", {}, el("dt", {}, "Kindle Unlimited"), kuValue),
       el("div", {}, el("dt", {}, "Kindle price"), priceValue));
@@ -181,14 +328,15 @@ function render() {
         ...(s === "no" ? [el("button", { class: "mark", on: { click: () => { editing = b.id; render(); } } }, price ? "Edit price" : "Add price")] : []),
         el("button", { class: "mark", on: { click: () => { saveMark(b.id, null); render(); } } }, "Undo")];
     }
-    list.append(el("li", {},
+    list.append(el("li", { "data-id": b.id, class: b.id === flashId ? "flash" : null },
       b.cover ? el("img", { src: b.cover, alt: "", loading: "lazy" }) : el("div", { class: "nocover" }),
       el("div", {},
         el("p", { class: "title" }, el("a", { href: b.goodreads_url, target: "_blank", rel: "noopener" }, b.title)),
         el("p", { class: "author" }, b.author),
         details,
         el("div", { class: "row" },
-          el("a", { class: "check", href: amazonUrl(b), target: "_blank", rel: "noopener" }, "Check on Amazon ↗"),
+          el("a", { class: "check", href: amazonUrl(b), target: "_blank", rel: "noopener",
+            on: { click: () => { try { localStorage.setItem(PENDING, JSON.stringify({ id: b.id, at: Date.now() })); } catch (e) {} } } }, "Check on Amazon ↗"),
           ...buttons))));
   }
   if (!shown.length) list.append(el("li", { class: "empty", style: "display:block" }, "No books match."));
@@ -206,6 +354,20 @@ document.querySelectorAll(".filters button").forEach(btn => btn.addEventListener
   render();
 }));
 document.getElementById("q").addEventListener("input", e => { query = e.target.value; render(); });
+try { window.name = "whats-next"; } catch (e) {} // lets the helper reuse this tab
+window.addEventListener("hashchange", () => { if (data.books.length) handleSaveHash(); });
+// The helper may open a new tab; keep any other open copy of this page in sync.
+window.addEventListener("storage", e => { if (e.key === KEY && data.books.length) render(); });
+document.getElementById("bookmarklet").setAttribute("href", helperCode());
+document.getElementById("bookmarklet").addEventListener("click", e => {
+  e.preventDefault();
+  alert("Drag this button to your bookmarks bar, then click it while you're on a book's Amazon page.");
+});
+document.getElementById("copyHelper").addEventListener("click", async e => {
+  e.preventDefault();
+  try { await navigator.clipboard.writeText(helperCode()); alert("Helper code copied. Create a new bookmark named “Save to What's Next” and paste this as its URL."); }
+  catch (err) { prompt("Copy this, then paste it as a new bookmark's URL:", helperCode()); }
+});
 document.getElementById("export").addEventListener("click", async e => {
   e.preventDefault();
   const text = JSON.stringify(loadMarks());
@@ -226,7 +388,7 @@ document.getElementById("import").addEventListener("click", e => {
 Promise.all([
   fetch("data/books.json", { cache: "no-store" }).then(r => r.json()),
   fetch("data/ku.json", { cache: "no-store" }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
-]).then(([books, ku]) => { data = books; repoMarks = ku; render(); })
+]).then(([books, ku]) => { data = books; repoMarks = ku; render(); handleSaveHash(); })
   .catch(() => { document.getElementById("sub").textContent = "Couldn't load books.json. Run scripts/fetch_shelf.py first."; });
 </script>
 </body>

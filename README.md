@@ -9,11 +9,18 @@ A small page that shows your Goodreads **to-read** shelf and helps you track whi
   It writes `data/books.json`. Limit: newest 100 books on the shelf.
 - A GitHub Actions workflow runs it daily and publishes the page to GitHub Pages.
 - Amazon has no public API for Kindle Unlimited or Kindle prices and blocks automated checks, so
-  each book has a **Check on Amazon** link plus **Free on KU / Paid…** buttons. For paid books you
-  can type the price you saw. Answers are saved in the browser. Use **Copy marks / Paste marks** to
-  move them between devices, or put them in `data/ku.json` to make them the default everywhere,
-  e.g. `{"8957018240": {"ku": "yes"}, "8905052539": {"ku": "no", "price": "12.99"}}`
+  KU status and price come from Amazon pages you open yourself:
+  - **One-click helper (recommended):** open the "One-click Amazon helper" section on the page and drag
+    **Save to What's Next** to your bookmarks bar. On a Kindle book's Amazon page, click it: it reads the KU
+    badge and Kindle price from the page you're viewing, asks you to confirm, and saves them to your list.
+    It only reads the page in your own browser and sends nothing anywhere except back to this page.
+  - **By hand:** the **Free on KU / Paid…** buttons, with an optional price.
+- Answers are saved in the browser. Use **Copy marks / Paste marks** to move them between devices, or put
+  them in `data/ku.json` to make them the default everywhere, e.g.
+  `{"8957018240": {"ku": "yes"}, "8905052539": {"ku": "no", "price": "$12.99"}}`
   (keys are the `id` values in `data/books.json`).
+- The helper is set up for the address you install it from. If the page moves (e.g. from
+  localhost to GitHub Pages), drag the button to your bookmarks bar again from the new address.
 
 ## Settings
 
